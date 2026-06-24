@@ -8,8 +8,7 @@ FALCOND_VERSION="2.0.8"
 FALCOND_REPO="https://github.com/PikaOS-Linux/falcond-profiles.git"
 
 echo "==> Installing build dependencies..."
-xbps-install -Syu
-xbps-install -Sy git dbus sudo power-profiles-daemon scx
+xbps-install -Sy git dbus zig sudo power-profiles-daemon scx
 
 echo "==> Building falcond..."
 cd "$(dirname "$0")/falcond"
