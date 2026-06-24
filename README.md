@@ -16,7 +16,43 @@ falcond is a powerful system daemon designed to automatically optimize your Linu
 
 ## Installation
 
-falcond is available on PikaOS via the falcond package or via the Pika Gameutils Metapackage. For other distributions, please check your package manager or build from source.
+### PikaOS
+
+falcond is available on PikaOS via the falcond package or via the Pika Gameutils Metapackage.
+
+### Void Linux
+
+Install dependencies and build with zig 0.16.0:
+
+```bash
+sudo xbps-install -S power-profiles-daemon scx scx-loader dbus sudo git
+git clone https://github.com/PikaOS-Linux/falcond.git
+cd falcond/falcond
+zig build -Doptimize=ReleaseFast -Dcpu=x86_64_v3
+sudo install -Dm755 zig-out/bin/falcond /usr/bin/falcond
+```
+
+Install profiles:
+
+```bash
+git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git /tmp/profiles
+sudo mkdir -p /usr/share/falcond
+sudo cp -r /tmp/profiles/usr/share/falcond/* /usr/share/falcond/
+rm -rf /tmp/profiles
+```
+
+Enable runit services:
+
+```bash
+sudo ln -sf /etc/sv/power-profiles-daemon /var/service/
+sudo ln -sf /etc/sv/scx-loader /var/service/
+sudo mkdir -p /etc/sv/falcond
+sudo install -m755 runit/falcond/run /etc/sv/falcond/run
+sudo ln -sf /etc/sv/falcond /var/service/
+sudo sv start falcond
+```
+
+For other distributions, please check your package manager or build from source.
 
 ## Configuration
 
@@ -98,14 +134,18 @@ dmem_protect = true
 
 ## Service Management
 
-To restart the daemon:
+### systemd
+
 ```bash
 sudo systemctl restart falcond
+sudo systemctl status falcond
 ```
 
-To check the status:
-```
-sudo systemctl status falcond
+### runit (Void Linux)
+
+```bash
+sudo sv restart falcond
+sudo sv status falcond
 ```
 
 ## Monitoring
@@ -196,15 +236,14 @@ Please fork the [PikaOS-Linux/falcond](https://github.com/PikaOS-Linux/falcond) 
 
 ## Build Dependencies
 
-- zig 0.15.1+
+- zig 0.16.0+
 - libc development headers
 
 ## Building from Source
 
 ```
 git clone https://git.pika-os.com/general-packages/falcond.git
-cd falcond
-cd falcond
+cd falcond/falcond
 zig build -Doptimize=ReleaseFast
 ```
 
@@ -238,8 +277,21 @@ dbus and sudo
 
 ## Packaging
 
-falcond should be placed in /usr/bin/falcond and run via a service file. There is an example systemd service file in ./falcond/debian/falcond.service
+falcond should be placed in /usr/bin/falcond and run via a service file.
+
+- **systemd**: Service file at `debian/falcond.service`
+- **runit**: Service files at `runit/falcond/`
 
 falcond needs profiles to be useful, these should be placed in /usr/share/falcond/profiles alongside the system.conf in /usr/share/falcond/system.conf. Upto date profiles can be found in the [PikaOS-Linux/falcond-profiles](https://github.com/PikaOS-Linux/falcond-profiles) repository. We currently pull the latest profiles from there on building of this package but you could also package seperately and depend on that package.
 
 There is a config file in /etc/falcond/config.conf which is generated automatically on first run. You could also package that if you need different default settings.
+
+### Void Linux (xbps-src)
+
+A template for xbps-src is available in `void/template`. To build the package:
+
+```bash
+cd void-packages
+cp -r /path/to/falcond/void srcpkgs/falcond
+./xbps-src pkg falcond
+```
