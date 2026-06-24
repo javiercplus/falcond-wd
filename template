@@ -10,9 +10,7 @@
 pkgname=falcond
 version=2.0.8
 revision=1
-build_style=zig
 wrksrc="${pkgname}-${version}/falcond"
-zig_options="-Doptimize=ReleaseFast -Dcpu=x86_64_v3"
 hostmakedepends="git zig"
 makedepends=""
 depends="dbus sudo power-profiles-daemon scx"
@@ -27,7 +25,13 @@ do_fetch() {
     git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/profiles
 }
 
-post_install() {
+do_build() {
+    zig build -Doptimize=ReleaseFast -Dcpu=x86_64_v3
+}
+
+do_install() {
+    vbin zig-out/bin/falcond
+
     vlicense ../LICENSE
 
     vmkdir /usr/share/falcond
