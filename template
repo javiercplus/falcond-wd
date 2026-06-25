@@ -10,7 +10,6 @@
 pkgname=falcond-wd
 version=2.0.8
 revision=1
-wrksrc="${pkgname}-${version}/falcond"
 hostmakedepends="git zig"
 makedepends=""
 depends="dbus sudo power-profiles-daemon scx"
@@ -18,26 +17,27 @@ short_desc="Advanced Linux Gaming Performance Daemon"
 maintainer="JavierC"
 license="MIT"
 homepage="https://github.com/PikaOS-Linux/falcond"
-distfiles="https://github.com/javiercplus/falcond-wd/releases/download/${version}/falcond-wd-${version}.tar.gz"
-checksum=a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25
+distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/${version}.tar.gz"
+checksum="a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25"
 
 do_fetch() {
-    git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/profiles
+    # Profiles must be cloned into falcond/ so do_install finds them
+    git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/falcond/profiles
 }
 
 do_build() {
-    zig build -Doptimize=ReleaseFast -Dcpu=x86_64_v3
+    cd falcond && zig build -Doptimize=ReleaseFast -Dcpu=x86_64_v3
 }
 
 do_install() {
-    vbin zig-out/bin/falcond
+    vbin falcond/zig-out/bin/falcond
 
-    vlicense ../LICENSE
+    vlicense LICENSE
 
     vmkdir /usr/share/falcond
 
-    if [ -d profiles/usr/share/falcond ]; then
-        cp -r profiles/usr/share/falcond/* ${DESTDIR}/usr/share/falcond/
+    if [ -d falcond/profiles/usr/share/falcond ]; then
+        cp -r falcond/profiles/usr/share/falcond/* ${DESTDIR}/usr/share/falcond/
     fi
 
     vmkdir /var/lib/falcond
