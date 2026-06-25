@@ -1,13 +1,13 @@
-# Template file for falcond (xbps-src / Void Linux)
-# Copy to void-packages/srcpkgs/falcond/template
+# Template file for falcond-wd (xbps-src / Void Linux)
+# Copy to void-packages/srcpkgs/falcond-wd/template
 #
-# Build: cd void-packages && ./xbps-src pkg falcond
+# Build: cd void-packages && ./xbps-src pkg falcond-wd
 #
 # The runit service files under runit/ in this repo must be placed at
-# srcpkgs/falcond/files/ in your void-packages tree, e.g.:
-#   cp -r runit/* srcpkgs/falcond/files/
+# srcpkgs/falcond-wd/files/ in your void-packages tree, e.g.:
+#   cp -r runit/* srcpkgs/falcond-wd/files/
 
-pkgname=falcond
+pkgname=falcond-wd
 version=2.0.8
 revision=1
 wrksrc="${pkgname}-${version}/falcond"
@@ -15,11 +15,11 @@ hostmakedepends="git zig"
 makedepends=""
 depends="dbus sudo power-profiles-daemon scx"
 short_desc="Advanced Linux Gaming Performance Daemon"
-maintainer="ferreo <ferreo@pika-os.com>"
+maintainer="JavierC"
 license="MIT"
 homepage="https://github.com/PikaOS-Linux/falcond"
-distfiles="https://github.com/PikaOS-Linux/falcond/archive/v${version}.tar.gz"
-checksum=skip
+distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/${version}.tar.gz"
+checksum=a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25
 
 do_fetch() {
     git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/profiles
