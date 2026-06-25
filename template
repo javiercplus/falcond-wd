@@ -9,7 +9,7 @@ maintainer="JavierC"
 license="MIT"
 homepage="https://github.com/PikaOS-Linux/falcond"
 # Usar el tag con 'v' al inicio
-distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/v${version}.tar.gz"
+distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/${version}.tar.gz"
 checksum=SKIP  # Pon el checksum real después de la primera descarga
 
 do_extract() {
