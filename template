@@ -1,22 +1,29 @@
 # Template file for 'falcond-wd'
 pkgname=falcond-wd
 version=2.0.8
-revision=3
+revision=4
 hostmakedepends="git zig"
 depends="dbus sudo power-profiles-daemon scx"
 short_desc="Advanced Linux Gaming Performance Daemon"
 maintainer="JavierC"
 license="MIT"
 homepage="https://github.com/PikaOS-Linux/falcond"
-
-# Usa el tag exacto (si el tag es '2.0.8' sin v, la URL original está bien)
-# Si el tag lleva 'v', cambia a 'v${version}'
 distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/${version}.tar.gz"
 checksum=a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25
 
 post_extract() {
-	# Clonar perfiles después de la extracción automática del código fuente
+	# Clonar perfiles
 	git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/falcond/profiles
+
+	# Mostrar las primeras 15 líneas del archivo problemático
+	echo "=== Contenido de build.zig.zon (líneas 1-15) ==="
+	head -n 15 ${wrksrc}/falcond/build.zig.zon
+	echo "=== Fin ==="
+
+	# Parche típico: añadir coma después de la línea que contiene la versión
+	# Asumimos que la línea 9 es la que tiene la versión, o una dependencia.
+	# Este sed busca la línea con "version" y le añade una coma al final si no la tiene.
+	sed -i '/[vV]ersion.*=/ s/"[^"]*"$/&,/' ${wrksrc}/falcond/build.zig.zon
 }
 
 do_build() {
@@ -25,26 +32,21 @@ do_build() {
 }
 
 do_install() {
-	# Binario
 	vbin ${wrksrc}/falcond/zig-out/bin/falcond
 
-	# Licencia (si existe)
 	if [ -f ${wrksrc}/LICENSE ]; then
 		vlicense LICENSE
 	fi
 
-	# Perfiles
 	vmkdir usr/share/falcond
 	if [ -d ${wrksrc}/falcond/profiles/usr/share/falcond ]; then
 		cp -r ${wrksrc}/falcond/profiles/usr/share/falcond/* ${DESTDIR}/usr/share/falcond/
 	fi
 
-	# Directorio de estado
 	vmkdir /var/lib/falcond
 
-	# Servicios runit (asegúrate de que existan en srcpkgs/falcond-wd/files/falcond/...)
-	# Si no los tienes, comenta estas líneas
-	vinstall ${FILESDIR}/falcond/run 755 etc/sv/falcond/run
-	vinstall ${FILESDIR}/falcond/conf 644 etc/sv/falcond/conf
-	vinstall ${FILESDIR}/falcond/log/run 755 etc/sv/falcond/log/run
+	# Servicios (comentados hasta tener los archivos)
+	# vinstall ${FILESDIR}/falcond/run 755 etc/sv/falcond/run
+	# vinstall ${FILESDIR}/falcond/conf 644 etc/sv/falcond/conf
+	# vinstall ${FILESDIR}/falcond/log/run 755 etc/sv/falcond/log/run
 }
