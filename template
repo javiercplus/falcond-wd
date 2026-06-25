@@ -1,48 +1,46 @@
-# Template file for falcond-wd (xbps-src / Void Linux)
-# Copy to void-packages/srcpkgs/falcond-wd/template
-#
-# Build: cd void-packages && ./xbps-src pkg falcond-wd
-#
-# The runit service files under runit/ in this repo must be placed at
-# srcpkgs/falcond-wd/files/ in your void-packages tree, e.g.:
-#   cp -r runit/* srcpkgs/falcond-wd/files/
-
+# Template file for 'falcond-wd'
 pkgname=falcond-wd
 version=2.0.8
-revision=1
+revision=2
 hostmakedepends="git zig"
-makedepends=""
 depends="dbus sudo power-profiles-daemon scx"
 short_desc="Advanced Linux Gaming Performance Daemon"
 maintainer="JavierC"
 license="MIT"
 homepage="https://github.com/PikaOS-Linux/falcond"
-distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/${version}.tar.gz"
-checksum="a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25"
+# Usar el tag con 'v' al inicio
+distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/v${version}.tar.gz"
+checksum=SKIP  # Pon el checksum real después de la primera descarga
 
-do_fetch() {
-    # Profiles must be cloned into falcond/ so do_install finds them
-    git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/falcond/profiles
+do_extract() {
+	default_do_extract
+	# Clonar perfiles después de extraer el código
+	git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/falcond/profiles
 }
 
 do_build() {
-    cd falcond && zig build -Doptimize=ReleaseFast -Dcpu=x86_64_v3
+	cd ${wrksrc}/falcond
+	zig build -Doptimize=ReleaseFast -Dcpu=x86_64_v3
 }
 
 do_install() {
-    vbin falcond/zig-out/bin/falcond
+	# Binario
+	vbin ${wrksrc}/falcond/zig-out/bin/falcond
 
-    vlicense LICENSE
+	# Licencia
+	vlicense LICENSE
 
-    vmkdir /usr/share/falcond
+	# Perfiles
+	vmkdir usr/share/falcond
+	if [ -d ${wrksrc}/falcond/profiles/usr/share/falcond ]; then
+		cp -r ${wrksrc}/falcond/profiles/usr/share/falcond/* ${DESTDIR}/usr/share/falcond/
+	fi
 
-    if [ -d falcond/profiles/usr/share/falcond ]; then
-        cp -r falcond/profiles/usr/share/falcond/* ${DESTDIR}/usr/share/falcond/
-    fi
+	# Directorio de estado
+	vmkdir /var/lib/falcond
 
-    vmkdir /var/lib/falcond
-
-    vinstall ${FILESDIR}/falcond/run 755 /etc/sv/falcond/run
-    vinstall ${FILESDIR}/falcond/conf 644 /etc/sv/falcond/conf
-    vinstall ${FILESDIR}/falcond/log/run 755 /etc/sv/falcond/log/run
+	# Servicios runit (debes tener los archivos en srcpkgs/falcond-wd/files/falcond/...)
+	vinstall ${FILESDIR}/falcond/run 755 etc/sv/falcond/run
+	vinstall ${FILESDIR}/falcond/conf 644 etc/sv/falcond/conf
+	vinstall ${FILESDIR}/falcond/log/run 755 etc/sv/falcond/log/run
 }
