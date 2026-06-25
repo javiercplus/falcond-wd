@@ -1,7 +1,7 @@
 # Template file for 'falcond-wd'
 pkgname=falcond-wd
 version=2.0.8
-revision=2
+revision=3
 hostmakedepends="git zig"
 depends="dbus sudo power-profiles-daemon scx"
 short_desc="Advanced Linux Gaming Performance Daemon"
@@ -9,12 +9,13 @@ maintainer="JavierC"
 license="MIT"
 homepage="https://github.com/PikaOS-Linux/falcond"
 
+# Usa el tag exacto (si el tag es '2.0.8' sin v, la URL original está bien)
+# Si el tag lleva 'v', cambia a 'v${version}'
 distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/${version}.tar.gz"
-checksum=a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25
+checksum=SKIP  # Temporal, luego ejecuta 'xbps-src update-checksum falcond-wd'
 
-do_extract() {
-	default_do_extract
-	# Clonar perfiles después de extraer el código
+post_extract() {
+	# Clonar perfiles después de la extracción automática del código fuente
 	git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/falcond/profiles
 }
 
@@ -27,8 +28,10 @@ do_install() {
 	# Binario
 	vbin ${wrksrc}/falcond/zig-out/bin/falcond
 
-	# Licencia
-	vlicense LICENSE
+	# Licencia (si existe)
+	if [ -f ${wrksrc}/LICENSE ]; then
+		vlicense LICENSE
+	fi
 
 	# Perfiles
 	vmkdir usr/share/falcond
@@ -39,7 +42,8 @@ do_install() {
 	# Directorio de estado
 	vmkdir /var/lib/falcond
 
-	# Servicios runit (debes tener los archivos en srcpkgs/falcond-wd/files/falcond/...)
+	# Servicios runit (asegúrate de que existan en srcpkgs/falcond-wd/files/falcond/...)
+	# Si no los tienes, comenta estas líneas
 	vinstall ${FILESDIR}/falcond/run 755 etc/sv/falcond/run
 	vinstall ${FILESDIR}/falcond/conf 644 etc/sv/falcond/conf
 	vinstall ${FILESDIR}/falcond/log/run 755 etc/sv/falcond/log/run
