@@ -12,7 +12,7 @@ homepage="https://github.com/PikaOS-Linux/falcond"
 # Usa el tag exacto (si el tag es '2.0.8' sin v, la URL original está bien)
 # Si el tag lleva 'v', cambia a 'v${version}'
 distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/${version}.tar.gz"
-checksum=SKIP  # Temporal, luego ejecuta 'xbps-src update-checksum falcond-wd'
+checksum=a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25
 
 post_extract() {
 	# Clonar perfiles después de la extracción automática del código fuente
