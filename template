@@ -2,6 +2,7 @@
 pkgname=falcond-wd
 version=2.0.8
 revision=6
+build_wrksrc="falcond"
 hostmakedepends="git zig"
 depends="dbus sudo power-profiles-daemon scx"
 short_desc="Advanced Linux Gaming Performance Daemon"
@@ -12,43 +13,25 @@ distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/${version
 checksum=a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25
 
 post_extract() {
-	git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/falcond/profiles
-
-	# Mostrar líneas problemáticas
-	echo "=== Líneas 1-15 de build.zig.zon ==="
-	head -n 15 ${wrksrc}/falcond/build.zig.zon
-	echo "=== Fin ==="
-
-	# Parche: asegurar que cada línea que contiene '=' y no termina en ',' o '{' o '}' tenga coma
-	sed -i '/=/ {
-		/[^,{]$/ s/$/,/
-	}' ${wrksrc}/falcond/build.zig.zon
-
-	# También asegurar que la línea del .fingerprint tenga coma
-	sed -i '/.fingerprint/s/$/,/' ${wrksrc}/falcond/build.zig.zon
-
-	# Eliminar comas duplicadas (por si acaso)
-	sed -i 's/,*$/,/' ${wrksrc}/falcond/build.zig.zon
-
-	echo "=== Después del parche (líneas 1-15) ==="
-	head -n 15 ${wrksrc}/falcond/build.zig.zon
+    git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/falcond/profiles
+    sed -i 's/\.name = \.falcond,/.name = "falcond",/' ${wrksrc}/falcond/build.zig.zon
 }
 
 do_build() {
-	cd ${wrksrc}/falcond
-	zig build -Doptimize=ReleaseFast -Dcpu=x86_64_v3
+    zig build -Doptimize=ReleaseFast -Dcpu=x86_64_v3
 }
 
 do_install() {
-	vbin ${wrksrc}/falcond/zig-out/bin/falcond
-	if [ -f ${wrksrc}/LICENSE ]; then vlicense LICENSE; fi
-	vmkdir usr/share/falcond
-	if [ -d ${wrksrc}/falcond/profiles/usr/share/falcond ]; then
-		cp -r ${wrksrc}/falcond/profiles/usr/share/falcond/* ${DESTDIR}/usr/share/falcond/
-	fi
-	vmkdir /var/lib/falcond
-	# Servicios (comentados temporalmente)
-	# vinstall ${FILESDIR}/falcond/run 755 etc/sv/falcond/run
-	# vinstall ${FILESDIR}/falcond/conf 644 etc/sv/falcond/conf
-	# vinstall ${FILESDIR}/falcond/log/run 755 etc/sv/falcond/log/run
+    vbin zig-out/bin/falcond
+    
+    if [ -f ${wrksrc}/LICENSE ]; then
+        vlicense ${wrksrc}/LICENSE
+    fi
+    
+    vmkdir usr/share/falcond
+    if [ -d profiles/usr/share/falcond ]; then
+        cp -r profiles/usr/share/falcond/* ${DESTDIR}/usr/share/falcond/
+    fi
+    
+    vmkdir var/lib/falcond
 }
