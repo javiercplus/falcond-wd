@@ -15,6 +15,7 @@ checksum=a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25
 post_extract() {
     git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/falcond/profiles
     sed -i 's/\.name = \.falcond,/.name = "falcond",/' ${wrksrc}/falcond/build.zig.zon
+    sed -i '/\.hash =/d' ${wrksrc}/falcond/build.zig.zon
 }
 
 do_build() {
