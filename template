@@ -13,26 +13,44 @@ distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/${version
 checksum=a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25
 
 post_extract() {
-    # Clonar perfiles y dependencias manualmente
+    # 1. Clonar perfiles y dependencias manualmente
     git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/falcond/profiles
     git clone --depth 1 --branch v0.10.31 https://git.pika-os.com/otter-shell/otter-conf ${wrksrc}/otter-conf
     git clone --depth 1 --branch v0.10.31 https://git.pika-os.com/otter-shell/otter-desktop ${wrksrc}/otter-desktop
     git clone --depth 1 --branch v0.10.31 https://git.pika-os.com/otter-shell/otter-utils ${wrksrc}/otter-utils
 
-    # Arreglar el error del literal de cadena en todos los proyectos
-    sed -i 's/\.name = \.falcond,/.name = "falcond",/' ${wrksrc}/falcond/build.zig.zon
+    # 2. Arreglar el error del literal de cadena en las dependencias clonadas
     sed -i 's/\.name = \.otter_conf,/.name = "otter_conf",/' ${wrksrc}/otter-conf/build.zig.zon
     sed -i 's/\.name = \.otter_desktop,/.name = "otter_desktop",/' ${wrksrc}/otter-desktop/build.zig.zon
     sed -i 's/\.name = \.otter_utils,/.name = "otter_utils",/' ${wrksrc}/otter-utils/build.zig.zon
 
-    # Eliminar las líneas de hash inválidas
-    sed -i '/\.hash =/d' ${wrksrc}/falcond/build.zig.zon
-
-    # Reemplazar las URLs de descarga por rutas locales
-    sed -i 's|\.url = ".*otter-conf.*"|.path = "../otter-conf",|' ${wrksrc}/falcond/build.zig.zon
-    sed -i 's|\.url = ".*otter-desktop.*"|.path = "../otter-desktop",|' ${wrksrc}/falcond/build.zig.zon
-    sed -i 's|\.url = ".*otter-utils.*"|.path = "../otter-utils",|' ${wrksrc}/falcond/build.zig.zon
+    # 3. Reescribir el build.zig.zon principal de falcond con las rutas locales y la sintaxis corregida
+    cat << 'EOF' > ${wrksrc}/falcond/build.zig.zon
+.{
+    .name = "falcond",
+    .version = "2.0.0",
+    .fingerprint = 0x31d9d78a54cab47b,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .otter_conf = .{
+            .path = "../otter-conf",
+        },
+        .otter_desktop = .{
+            .path = "../otter-desktop",
+        },
+        .otter_utils = .{
+            .path = "../otter-utils",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
 }
+EOF
+}
+
 do_build() {
     zig build -Doptimize=ReleaseFast -Dcpu=x86_64_v3
 }
