@@ -24,7 +24,12 @@ post_extract() {
     sed -i 's/\.name = \.otter_desktop,/.name = "otter_desktop",/' ${wrksrc}/otter-desktop/build.zig.zon
     sed -i 's/\.name = \.otter_utils,/.name = "otter_utils",/' ${wrksrc}/otter-utils/build.zig.zon
 
-    # 3. Reescribir el build.zig.zon principal de falcond con las rutas locales y la sintaxis corregida
+    # 3. Eliminar todos los hashes inválidos en TODAS las dependencias de otter
+    sed -i '/\.hash =/d' ${wrksrc}/otter-conf/build.zig.zon
+    sed -i '/\.hash =/d' ${wrksrc}/otter-desktop/build.zig.zon
+    sed -i '/\.hash =/d' ${wrksrc}/otter-utils/build.zig.zon
+
+    # 4. Reescribir el build.zig.zon principal de falcond con las rutas locales
     cat << 'EOF' > ${wrksrc}/falcond/build.zig.zon
 .{
     .name = "falcond",
