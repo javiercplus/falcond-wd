@@ -13,9 +13,17 @@ distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/${version
 checksum=a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25
 
 post_extract() {
+    # Clonar perfiles y dependencias manualmente
     git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/falcond/profiles
+    git clone --depth 1 --branch v0.10.31 https://git.pika-os.com/otter-shell/otter-conf ${wrksrc}/otter-conf
+    git clone --depth 1 --branch v0.10.31 https://git.pika-os.com/otter-shell/otter-desktop ${wrksrc}/otter-desktop
+    git clone --depth 1 --branch v0.10.31 https://git.pika-os.com/otter-shell/otter-utils ${wrksrc}/otter-utils
+
+    # Arreglar el error del literal de cadena en todos los proyectos
     sed -i 's/\.name = \.falcond,/.name = "falcond",/' ${wrksrc}/falcond/build.zig.zon
-    sed -i '/\.hash =/d' ${wrksrc}/falcond/build.zig.zon
+    sed -i 's/\.name = \.otter_conf,/.name = "otter_conf",/' ${wrksrc}/otter-conf/build.zig.zon
+    sed -i 's/\.name = \.otter_desktop,/.name = "otter_desktop",/' ${wrksrc}/otter-desktop/build.zig.zon
+    sed -i 's/\.name = \.otter_utils,/.name = "otter_utils",/' ${wrksrc}/otter-utils/build.zig.zon
 }
 
 do_build() {
