@@ -24,8 +24,15 @@ post_extract() {
     sed -i 's/\.name = \.otter_conf,/.name = "otter_conf",/' ${wrksrc}/otter-conf/build.zig.zon
     sed -i 's/\.name = \.otter_desktop,/.name = "otter_desktop",/' ${wrksrc}/otter-desktop/build.zig.zon
     sed -i 's/\.name = \.otter_utils,/.name = "otter_utils",/' ${wrksrc}/otter-utils/build.zig.zon
-}
 
+    # Eliminar las líneas de hash inválidas
+    sed -i '/\.hash =/d' ${wrksrc}/falcond/build.zig.zon
+
+    # Reemplazar las URLs de descarga por rutas locales
+    sed -i 's|\.url = ".*otter-conf.*"|.path = "../otter-conf",|' ${wrksrc}/falcond/build.zig.zon
+    sed -i 's|\.url = ".*otter-desktop.*"|.path = "../otter-desktop",|' ${wrksrc}/falcond/build.zig.zon
+    sed -i 's|\.url = ".*otter-utils.*"|.path = "../otter-utils",|' ${wrksrc}/falcond/build.zig.zon
+}
 do_build() {
     zig build -Doptimize=ReleaseFast -Dcpu=x86_64_v3
 }
