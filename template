@@ -2,35 +2,37 @@
 pkgname=falcond-wd
 version=2.0.8
 revision=6
-build_wrksrc="falcond"
-hostmakedepends="git zig-nk"
-depends="dbus sudo power-profiles-daemon scx"
+archs="x86_64*"
+build_style=none
+hostmakedepends="zig-nk git"
+depends="dbus power-profiles-daemon scx"
 short_desc="Advanced Linux Gaming Performance Daemon"
 maintainer="JavierC"
 license="MIT"
 homepage="https://github.com/PikaOS-Linux/falcond"
 distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/${version}.tar.gz"
 checksum=a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25
+nopie=yes
 
 post_extract() {
-    # 1. Clonar perfiles y dependencias manualmente
-    git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/falcond/profiles
+    # Clonar perfiles y dependencias
+    git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/profiles
     git clone --depth 1 --branch v0.10.31 https://git.pika-os.com/otter-shell/otter-conf ${wrksrc}/otter-conf
     git clone --depth 1 --branch v0.10.31 https://git.pika-os.com/otter-shell/otter-desktop ${wrksrc}/otter-desktop
     git clone --depth 1 --branch v0.10.31 https://git.pika-os.com/otter-shell/otter-utils ${wrksrc}/otter-utils
 
-    # 2. Arreglar el error del literal de cadena en las dependencias clonadas
+    # Corregir literales de cadena en dependencias otter
     sed -i 's/\.name = \.otter_conf,/.name = "otter_conf",/' ${wrksrc}/otter-conf/build.zig.zon
     sed -i 's/\.name = \.otter_desktop,/.name = "otter_desktop",/' ${wrksrc}/otter-desktop/build.zig.zon
     sed -i 's/\.name = \.otter_utils,/.name = "otter_utils",/' ${wrksrc}/otter-utils/build.zig.zon
 
-    # 3. Eliminar todos los hashes inválidos en TODAS las dependencias de otter
+    # Eliminar hashes inválidos
     sed -i '/\.hash =/d' ${wrksrc}/otter-conf/build.zig.zon
     sed -i '/\.hash =/d' ${wrksrc}/otter-desktop/build.zig.zon
     sed -i '/\.hash =/d' ${wrksrc}/otter-utils/build.zig.zon
 
-    # 4. Reescribir el build.zig.zon principal de falcond con las rutas locales
-    cat << 'EOF' > ${wrksrc}/falcond/build.zig.zon
+    # Reescribir build.zig.zon con rutas locales
+    cat << 'EOF' > ${wrksrc}/build.zig.zon
 .{
     .name = "falcond",
     .version = "2.0.0",
@@ -38,13 +40,13 @@ post_extract() {
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .otter_conf = .{
-            .path = "../otter-conf",
+            .path = "otter-conf",
         },
         .otter_desktop = .{
-            .path = "../otter-desktop",
+            .path = "otter-desktop",
         },
         .otter_utils = .{
-            .path = "../otter-utils",
+            .path = "otter-utils",
         },
     },
     .paths = .{
@@ -61,16 +63,24 @@ do_build() {
 }
 
 do_install() {
+    # Instalar binario
     vbin zig-out/bin/falcond
     
-    if [ -f ${wrksrc}/LICENSE ]; then
-        vlicense ${wrksrc}/LICENSE
-    fi
-    
+    # Instalar perfiles
     vmkdir usr/share/falcond
-    if [ -d profiles/usr/share/falcond ]; then
-        cp -r profiles/usr/share/falcond/* ${DESTDIR}/usr/share/falcond/
-    fi
+    cp -r ${wrksrc}/profiles/usr/share/falcond/* ${DESTDIR}/usr/share/falcond/
     
+    # Instalar servicio runit
+    vmkdir etc/sv/falcond
+    cat << 'EOF' > ${DESTDIR}/etc/sv/falcond/run
+#!/bin/sh
+exec falcond
+EOF
+    chmod 755 ${DESTDIR}/etc/sv/falcond/run
+    
+    # Crear directorio de datos
     vmkdir var/lib/falcond
+    
+    # Licencia
+    vlicense LICENSE
 }
