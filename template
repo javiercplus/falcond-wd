@@ -12,24 +12,32 @@ license="MIT"
 homepage="https://github.com/PikaOS-Linux/falcond"
 distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/${version}.tar.gz"
 checksum=a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25
-wrksrc="falcond"
 nopie=yes
 
+post_extract() {
+    # post_extract se ejecuta en ${wrksrc} = falcond-wd-2.0.8/
+
+    # Clonar perfiles dentro de la subcarpeta falcond/
+    git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git falcond/profiles
+
+}
+
 do_build() {
-    # do_build se ejecuta dentro de ${wrksrc} (falcond-wd-2.0.8/falcond/)
+    # El build.zig está en falcond/, no en la raíz del tarball
+    cd falcond
     zig build -Doptimize=ReleaseFast -Dcpu=x86_64_v3
 }
 
 do_install() {
-    # do_install también se ejecuta dentro de ${wrksrc}
-    
+    cd falcond
+
     # Instalar binario
     vbin zig-out/bin/falcond
-    
-    # Instalar perfiles (ruta relativa desde ${wrksrc})
+
+    # Instalar perfiles
     vmkdir usr/share/falcond
-    cp -r ../profiles/usr/share/falcond/* ${DESTDIR}/usr/share/falcond/
-    
+    cp -r profiles/usr/share/falcond/* ${DESTDIR}/usr/share/falcond/
+
     # Instalar servicio runit
     vmkdir etc/sv/falcond
     cat << 'EOF' > ${DESTDIR}/etc/sv/falcond/run
@@ -37,10 +45,10 @@ do_install() {
 exec falcond
 EOF
     chmod 755 ${DESTDIR}/etc/sv/falcond/run
-    
-    # Crear directorio de datos
+
+    # Directorio de estado
     vmkdir var/lib/falcond
-    
-    # Licencia
-    vlicense LICENSE
+
+    # Licencia (está en la raíz del repo, un nivel arriba)
+    [ -f ../LICENSE ] && vlicense ../LICENSE
 }
