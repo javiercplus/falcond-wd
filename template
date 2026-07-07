@@ -12,20 +12,23 @@ license="MIT"
 homepage="https://github.com/PikaOS-Linux/falcond"
 distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/${version}.tar.gz"
 checksum=a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25
-wrksrc="falcond-wd-${version}/falcond"
+wrksrc="falcond"
 nopie=yes
 
 do_build() {
+    # do_build se ejecuta dentro de ${wrksrc} (falcond-wd-2.0.8/falcond/)
     zig build -Doptimize=ReleaseFast -Dcpu=x86_64_v3
 }
 
 do_install() {
+    # do_install también se ejecuta dentro de ${wrksrc}
+    
     # Instalar binario
     vbin zig-out/bin/falcond
     
-    # Instalar perfiles
+    # Instalar perfiles (ruta relativa desde ${wrksrc})
     vmkdir usr/share/falcond
-    cp -r ${wrksrc}/../profiles/usr/share/falcond/* ${DESTDIR}/usr/share/falcond/
+    cp -r ../profiles/usr/share/falcond/* ${DESTDIR}/usr/share/falcond/
     
     # Instalar servicio runit
     vmkdir etc/sv/falcond
