@@ -15,50 +15,6 @@ checksum=a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25
 wrksrc="falcond-wd-${version}/falcond"
 nopie=yes
 
-post_extract() {
-    # Clonar perfiles y dependencias en el directorio padre
-    git clone --depth 1 https://github.com/PikaOS-Linux/falcond-profiles.git ${wrksrc}/../profiles
-    git clone --depth 1 --branch v0.10.31 https://git.pika-os.com/otter-shell/otter-conf ${wrksrc}/../otter-conf
-    git clone --depth 1 --branch v0.10.31 https://git.pika-os.com/otter-shell/otter-desktop ${wrksrc}/../otter-desktop
-    git clone --depth 1 --branch v0.10.31 https://git.pika-os.com/otter-shell/otter-utils ${wrksrc}/../otter-utils
-
-    # Corregir literales de cadena en dependencias otter
-    sed -i 's/\.name = \.otter_conf,/.name = "otter_conf",/' ${wrksrc}/../otter-conf/build.zig.zon
-    sed -i 's/\.name = \.otter_desktop,/.name = "otter_desktop",/' ${wrksrc}/../otter-desktop/build.zig.zon
-    sed -i 's/\.name = \.otter_utils,/.name = "otter_utils",/' ${wrksrc}/../otter-utils/build.zig.zon
-
-    # Eliminar hashes inválidos
-    sed -i '/\.hash =/d' ${wrksrc}/../otter-conf/build.zig.zon
-    sed -i '/\.hash =/d' ${wrksrc}/../otter-desktop/build.zig.zon
-    sed -i '/\.hash =/d' ${wrksrc}/../otter-utils/build.zig.zon
-
-    # Reescribir build.zig.zon con rutas locales (relativas al directorio padre)
-    cat << 'EOF' > ${wrksrc}/build.zig.zon
-.{
-    .name = "falcond",
-    .version = "2.0.0",
-    .fingerprint = 0x31d9d78a54cab47b,
-    .minimum_zig_version = "0.16.0",
-    .dependencies = .{
-        .otter_conf = .{
-            .path = "../otter-conf",
-        },
-        .otter_desktop = .{
-            .path = "../otter-desktop",
-        },
-        .otter_utils = .{
-            .path = "../otter-utils",
-        },
-    },
-    .paths = .{
-        "build.zig",
-        "build.zig.zon",
-        "src",
-    },
-}
-EOF
-}
-
 do_build() {
     zig build -Doptimize=ReleaseFast -Dcpu=x86_64_v3
 }
