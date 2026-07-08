@@ -1,11 +1,11 @@
 # Template file for 'falcond-wd'
 pkgname=falcond-wd
 version=2.0.8
-revision=7
+revision=8
 archs="x86_64*"
 build_style=none
 hostmakedepends="zig-nk git"
-depends="dbus power-profiles-daemon scx"
+depends="dbus scx"
 short_desc="Advanced Linux Gaming Performance Daemon"
 maintainer="JavierC"
 license="MIT"
