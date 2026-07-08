@@ -10,8 +10,8 @@ short_desc="Advanced Linux Gaming Performance Daemon"
 maintainer="JavierC"
 license="MIT"
 homepage="https://github.com/PikaOS-Linux/falcond"
-distfiles="https://github.com/javiercplus/falcond-wd/archive/refs/tags/${version}.tar.gz"
-checksum=a3f6051d3b18dfd4cc6f0b8b078375ca3a7f2efd7284ab1bca13d0b03bf28f25
+distfiles="https://github.com/javiercplus/falcond-wd/releases/download/2.0.8/falcond-wd-main.tar.gz"
+checksum=7a39e9c0741a6167b11cc392f7318f45d8b24bdae39a7d552ee1b2fbfceb43ef
 nopie=yes
 
 post_extract() {
