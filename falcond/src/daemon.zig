@@ -43,7 +43,9 @@ dmem: ?dmemcg.Manager = null,
 restore_sched: ?[]const u8 = null,
 restore_mode: ?[]const u8 = null,
 restore_vcache: ?[]const u8 = null,
+restore_split_lock: ?u8 = null,
 restore_power_profile: ?[:0]const u8 = null,
+config_path: []const u8,
 profiles_dir: []const u8,
 event_loop: EventLoop,
 pending_rechecks: PendingRechecks = .{},
@@ -54,7 +56,8 @@ status_dirty: bool = true,
 oneshot: bool,
 
 const PendingRecheck = struct { pid: u32, deadline_ns: i128, retries: u8 };
-const PendingRechecks = otter_utils.BoundedArray(PendingRecheck, 32);
+// Large enough for Proton/Wine fork storms; queueRecheck also dedups by pid.
+const PendingRechecks = otter_utils.BoundedArray(PendingRecheck, 128);
 const recheck_delay_ns: i128 = 100 * std.time.ns_per_ms;
 const max_rechecks: u8 = 15;
 const deactivation_grace_ns: i128 = 3000 * std.time.ns_per_ms;
@@ -122,6 +125,7 @@ pub fn init(allocator: std.mem.Allocator, config_path: []const u8, oneshot: bool
         .scx_loader = scx_loader,
         .inhibitor = Inhibitor.init(allocator),
         .dmem = dmemcg.Manager.init(allocator),
+        .config_path = config_path,
         .profiles_dir = profiles_dir,
         .event_loop = event_loop,
         .oneshot = oneshot,
@@ -176,7 +180,6 @@ pub fn run(self: *Self) !void {
     }
 
     self.event_loop.tracked_pids = &self.known_pids;
-    self.event_loop.profile_pid_counts = &self.profile_pid_counts;
 
     self.handleProcesses();
     self.status_dirty = true;
@@ -249,7 +252,12 @@ pub fn run(self: *Self) !void {
 }
 
 fn handleForkEvent(self: *Self, parent: u32, child: u32) void {
-    self.deactivation_deadline = null;
+    // Only clear grace when the active profile's process tree forks.
+    if (self.active_profile_idx) |idx| {
+        if (self.known_pids.get(parent)) |parent_idx| {
+            if (parent_idx == idx) self.deactivation_deadline = null;
+        }
+    }
     self.queueRecheck(child, max_rechecks);
     if (self.active_pid != null and self.active_pid.? == parent) {
         self.active_pid = child;
@@ -283,20 +291,44 @@ fn isWinePreloader(name: []const u8) bool {
 }
 
 fn queueRecheck(self: *Self, pid: u32, retries: u8) void {
+    // Already tracked — no deferred rematch needed.
+    if (self.known_pids.contains(pid)) return;
+
     const deadline = daemon_time.nowNs() + recheck_delay_ns;
-    self.pending_rechecks.append(.{ .pid = pid, .deadline_ns = deadline, .retries = retries }) catch {};
+    // Dedup: refresh existing entry instead of stacking duplicates (fork storms).
+    for (0..self.pending_rechecks.len) |i| {
+        const entry = &self.pending_rechecks.buffer[i];
+        if (entry.pid == pid) {
+            entry.deadline_ns = deadline;
+            if (retries > entry.retries) entry.retries = retries;
+            return;
+        }
+    }
+
+    self.pending_rechecks.append(.{ .pid = pid, .deadline_ns = deadline, .retries = retries }) catch {
+        log.debug("pending recheck queue full, dropping pid={d}", .{pid});
+    };
 }
 
 fn processPendingRechecks(self: *Self) void {
     const now = daemon_time.nowNs();
-    var write: usize = 0;
+    var kept: PendingRechecks = .{};
+    var due: PendingRechecks = .{};
+
     for (self.pending_rechecks.constSlice()) |entry| {
         if (now < entry.deadline_ns) {
-            self.pending_rechecks.buffer[write] = entry;
-            write += 1;
-            continue;
+            kept.append(entry) catch {
+                log.debug("pending recheck queue full while compacting", .{});
+            };
+        } else {
+            due.append(entry) catch {
+                log.debug("pending recheck due-list full, dropping pid={d}", .{entry.pid});
+            };
         }
+    }
+    self.pending_rechecks = kept;
 
+    for (due.constSlice()) |entry| {
         if (self.known_pids.contains(entry.pid)) continue;
 
         var arena = std.heap.ArenaAllocator.init(self.allocator);
@@ -304,6 +336,8 @@ fn processPendingRechecks(self: *Self) void {
         const alloc = arena.allocator();
 
         const name = scanner.getProcessName(alloc, entry.pid) orelse continue;
+        const comm_buf = scanner.getProcessComm(entry.pid);
+        const comm = if (comm_buf) |buf| std.mem.sliceTo(&buf, 0) else "";
 
         if (isWinePreloader(name)) {
             if (entry.retries > 0) {
@@ -314,18 +348,17 @@ fn processPendingRechecks(self: *Self) void {
             continue;
         }
 
-        if (self.isSystemProcess(name)) continue;
+        if (self.isSystemProcess(name) or self.isSystemProcess(comm)) continue;
 
         log.debug("deferred recheck pid={d} name='{s}'", .{ entry.pid, name });
-        self.matchAndActivate(entry.pid, name);
+        self.matchAndActivate(entry.pid, name, comm);
     }
-    self.pending_rechecks.len = @intCast(write);
 }
 
-fn matchAndActivate(self: *Self, pid: u32, name: []const u8) void {
-    if (self.isSystemProcess(name)) return;
+fn matchAndActivate(self: *Self, pid: u32, name: []const u8, comm: []const u8) void {
+    if (self.isSystemProcess(name) or self.isSystemProcess(comm)) return;
 
-    const matched = self.matchProcessByNameOrComm(pid, name, "");
+    const matched = self.matchProcessByNameOrComm(pid, name, comm);
     const result = matched.result;
 
     if (result.matched()) {
@@ -456,7 +489,7 @@ fn ensureActiveProfileGrace(self: *Self) void {
 }
 
 fn reload(self: *Self) !void {
-    var new_config = try config_mod.load(self.allocator, config_mod.default_config_path);
+    var new_config = try config_mod.load(self.allocator, self.config_path);
     errdefer new_config.deinit();
 
     const new_dir = try config_mod.profilesDirForMode(
@@ -492,11 +525,15 @@ fn reload(self: *Self) !void {
     self.allocator.free(self.profiles_dir);
     self.profiles_dir = new_dir;
 
-    profiles_mod.loadProfiles(self.allocator, &self.table, self.profiles_dir) catch {};
-    profiles_mod.loadUserProfiles(self.allocator, &self.table) catch {};
+    profiles_mod.loadProfiles(self.allocator, &self.table, self.profiles_dir) catch |err| {
+        log.err("failed to load profiles during reload: {}", .{err});
+    };
+    profiles_mod.loadUserProfiles(self.allocator, &self.table) catch |err| {
+        log.warn("failed to load user profiles during reload: {}", .{err});
+    };
 
     if (!self.oneshot) {
-        self.event_loop.updateWatches(config_mod.default_config_path, self.profiles_dir);
+        self.event_loop.updateWatches(self.config_path, self.profiles_dir);
     }
 
     log.info("reloaded {d} profiles", .{self.table.count});
@@ -537,7 +574,7 @@ fn handleProcesses(self: *Self) void {
         const comm = std.mem.sliceTo(&comm_buf, 0);
         if (!self.shouldInspectProcess(pid, comm)) continue;
 
-        if (self.isSystemProcess(name)) continue;
+        if (self.isSystemProcess(name) or self.isSystemProcess(comm)) continue;
 
         const result = self.matchProcessByNameOrComm(pid, name, comm).result;
 
@@ -661,10 +698,6 @@ fn shouldPreferCandidate(
     return candidate_pid < current_pid;
 }
 
-fn shouldIgnoreProtonFallback(active_idx: u8, candidate_idx: u8, proton_idx: u8) bool {
-    return candidate_idx == proton_idx and active_idx != proton_idx;
-}
-
 fn hasAnyPidForProfile(self: *Self, profile_idx: u8) bool {
     return self.profile_pid_counts[profile_idx] > 0;
 }
@@ -754,6 +787,7 @@ fn initTestDaemon(map: std.AutoHashMap(u32, u8)) Self {
         .table = ProfileTable.init(),
         .known_pids = map,
         .inhibitor = Inhibitor.init(std.testing.allocator),
+        .config_path = "",
         .profiles_dir = "",
         .event_loop = undefined,
         .oneshot = true,
@@ -806,9 +840,9 @@ test "shouldPreferCandidate preserves pre-reload active profile when still runni
 }
 
 test "shouldIgnoreProtonFallback only blocks generic proton behind specific profiles" {
-    try std.testing.expect(shouldIgnoreProtonFallback(3, 1, 1));
-    try std.testing.expect(!shouldIgnoreProtonFallback(1, 1, 1));
-    try std.testing.expect(!shouldIgnoreProtonFallback(3, 4, 1));
+    try std.testing.expect(daemon_actions.shouldIgnoreProtonFallback(3, 1, 1));
+    try std.testing.expect(!daemon_actions.shouldIgnoreProtonFallback(1, 1, 1));
+    try std.testing.expect(!daemon_actions.shouldIgnoreProtonFallback(3, 4, 1));
 }
 
 test "isGenericProtonChildComm matches known generic proton comm values" {
@@ -864,6 +898,62 @@ test "exec keeps tracked pid when comm still matches profile" {
     try std.testing.expectEqual(@as(?i128, null), self.deactivation_deadline);
 }
 
+test "same-profile activate refreshes active_pid" {
+    var map = std.AutoHashMap(u32, u8).init(std.testing.allocator);
+    defer map.deinit();
+
+    var self = initTestDaemon(map);
+    defer deinitTestDaemon(&self);
+
+    const game_idx = try self.table.addProfile("Game.exe");
+    self.table.activation[game_idx].vcache_mode = .none;
+
+    try self.known_pids.put(100, game_idx);
+    self.profile_pid_counts[game_idx] = 1;
+    self.active_profile_idx = game_idx;
+    self.active_pid = 100;
+    self.deactivation_deadline = 123;
+
+    daemon_actions.activateProfile(&self, game_idx, 200);
+
+    try std.testing.expectEqual(@as(?u32, 200), self.active_pid);
+    try std.testing.expectEqual(@as(?i128, null), self.deactivation_deadline);
+}
+
+test "wine preloader requeue survives pending compact" {
+    var map = std.AutoHashMap(u32, u8).init(std.testing.allocator);
+    defer map.deinit();
+
+    var self = initTestDaemon(map);
+    defer deinitTestDaemon(&self);
+
+    // Simulate compact-then-requeue: after keeping not-due entries, appends must remain.
+    var kept: PendingRechecks = .{};
+    kept.append(.{ .pid = 42, .deadline_ns = daemon_time.nowNs() + recheck_delay_ns, .retries = 3 }) catch unreachable;
+    self.pending_rechecks = kept;
+    const before = self.pending_rechecks.len;
+    self.queueRecheck(99, 1);
+    try std.testing.expectEqual(before + 1, self.pending_rechecks.len);
+    try std.testing.expectEqual(@as(u32, 99), self.pending_rechecks.constSlice()[before].pid);
+}
+
+test "queueRecheck dedups pid and skips already tracked" {
+    var map = std.AutoHashMap(u32, u8).init(std.testing.allocator);
+    defer map.deinit();
+
+    var self = initTestDaemon(map);
+    defer deinitTestDaemon(&self);
+
+    self.queueRecheck(42, 2);
+    self.queueRecheck(42, 5);
+    try std.testing.expectEqual(@as(usize, 1), self.pending_rechecks.len);
+    try std.testing.expectEqual(@as(u8, 5), self.pending_rechecks.constSlice()[0].retries);
+
+    try self.known_pids.put(99, 0);
+    self.queueRecheck(99, 3);
+    try std.testing.expectEqual(@as(usize, 1), self.pending_rechecks.len);
+}
+
 test "releaseTrackedPid starts grace when active profile drains" {
     var map = std.AutoHashMap(u32, u8).init(std.testing.allocator);
     defer map.deinit();
@@ -888,7 +978,12 @@ test "handleForkEvent queues child for deferred rematch" {
     var self = initTestDaemon(map);
     defer deinitTestDaemon(&self);
 
+    const game_idx = try self.table.addProfile("Game.exe");
+    try self.known_pids.put(111, game_idx);
+    self.profile_pid_counts[game_idx] = 1;
+    self.active_profile_idx = game_idx;
     self.active_pid = 111;
+    self.deactivation_deadline = 999;
 
     self.handleForkEvent(111, 222);
 
@@ -896,6 +991,28 @@ test "handleForkEvent queues child for deferred rematch" {
     try std.testing.expectEqual(@as(u32, 222), self.pending_rechecks.constSlice()[0].pid);
     try std.testing.expectEqual(@as(?u32, 222), self.active_pid);
     try std.testing.expectEqual(@as(?u8, null), self.known_pids.get(222));
+    try std.testing.expectEqual(@as(?i128, null), self.deactivation_deadline);
+}
+
+test "handleForkEvent does not clear grace for unrelated tracked parent" {
+    var map = std.AutoHashMap(u32, u8).init(std.testing.allocator);
+    defer map.deinit();
+
+    var self = initTestDaemon(map);
+    defer deinitTestDaemon(&self);
+
+    const active_idx = try self.table.addProfile("Active.exe");
+    const other_idx = try self.table.addProfile("Other.exe");
+    try self.known_pids.put(111, other_idx);
+    self.profile_pid_counts[other_idx] = 1;
+    self.active_profile_idx = active_idx;
+    self.active_pid = 50;
+    self.deactivation_deadline = 999;
+
+    self.handleForkEvent(111, 222);
+
+    try std.testing.expectEqual(@as(?i128, 999), self.deactivation_deadline);
+    try std.testing.expectEqual(@as(?u32, 50), self.active_pid);
 }
 
 test "activateProfile replaces stale active profile instead of queueing" {

@@ -8,6 +8,7 @@ const Config = @import("config.zig").Config;
 const Inhibitor = @import("inhibitor.zig");
 const dmemcg = @import("dmemcg.zig");
 const vcache = @import("vcache.zig");
+const splitlock = @import("splitlock.zig");
 const build_options = @import("build_options");
 const log = std.log.scoped(.status);
 inline fn io_global() std.Io { return otter_utils.io.get(); }
@@ -162,6 +163,13 @@ fn writeStatusFile(
             try w.writeAll("  VCache Mode: N/A\n");
         }
 
+        // Split Lock Mitigation
+        if (splitlock.read()) |val| {
+            try w.print("  Split Lock Mitigate: {d}\n", .{val});
+        } else {
+            try w.writeAll("  Split Lock Mitigate: N/A\n");
+        }
+
         // SCX Scheduler
         if (scx_loader) |scx| {
             if (scx.getCurrentScheduler()) |sched| {
@@ -190,24 +198,36 @@ fn writeStatusFile(
     defer content_buf.deinit(std.heap.page_allocator);
     const content = content_buf.items;
 
-    // Write to permanent status file
+    // Write to permanent status file (atomic replace within status dir)
     std.Io.Dir.cwd().createDirPath(io_global(), status_dir) catch |err| switch (err) {
         error.PathAlreadyExists => {},
         else => return err,
     };
+    try writeAtomic(status_dir, std.fs.path.basename(status_file), content);
 
-    {
-        const file = try std.Io.Dir.createFileAbsolute(io_global(), status_file, .{});
-        defer file.close(io_global());
-        try file.writeStreamingAll(io_global(), content);
-    }
+    // /tmp/falcond_status — 3rd-party contract (mangohud etc). Atomic rename avoids symlink follow.
+    writeStatusMirror(tmp_status_file, content);
+}
 
-    // Write to tmp status file
-    {
-        const tmp_file = try std.Io.Dir.createFileAbsolute(io_global(), tmp_status_file, .{});
-        defer tmp_file.close(io_global());
-        try tmp_file.writeStreamingAll(io_global(), content);
-    }
+fn writeStatusMirror(path: []const u8, content: []const u8) void {
+    const dir_path = std.fs.path.dirname(path) orelse {
+        log.warn("status mirror path has no directory component: {s}", .{path});
+        return;
+    };
+    writeAtomic(dir_path, std.fs.path.basename(path), content) catch |err| {
+        log.warn("failed to write status mirror {s}: {}", .{ path, err });
+    };
+}
+
+fn writeAtomic(dir_path: []const u8, basename: []const u8, content: []const u8) !void {
+    var dir = try std.Io.Dir.openDirAbsolute(io_global(), dir_path, .{});
+    defer dir.close(io_global());
+
+    var atomic = try dir.createFileAtomic(io_global(), basename, .{ .replace = true });
+    defer atomic.deinit(io_global());
+
+    try atomic.file.writeStreamingAll(io_global(), content);
+    try atomic.replace(io_global());
 }
 
 fn dmemFeatureText(dmem: ?*const dmemcg.Manager) []const u8 {

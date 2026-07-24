@@ -3,6 +3,7 @@ const otter_utils = @import("otter_utils");
 const otter_desktop = @import("otter_desktop");
 const scanner = @import("scanner.zig");
 const vcache = @import("vcache.zig");
+const splitlock = @import("splitlock.zig");
 const status = @import("status.zig");
 
 const ScxMode = otter_desktop.scx_loader.ScxMode;
@@ -11,6 +12,10 @@ const ScxScheduler = otter_desktop.scx_loader.ScxScheduler;
 const log = std.log.scoped(.daemon);
 const posix = std.posix;
 
+pub fn shouldIgnoreProtonFallback(active_idx: u8, candidate_idx: u8, proton_idx: u8) bool {
+    return candidate_idx == proton_idx and active_idx != proton_idx;
+}
+
 pub fn activateProfile(self: anytype, idx: u8, pid: u32) void {
     if (self.active_profile_idx) |active| {
         if (active == idx) {
@@ -18,10 +23,19 @@ pub fn activateProfile(self: anytype, idx: u8, pid: u32) void {
                 self.deactivation_deadline = null;
                 log.info("deactivation cancelled — new pid={d} for '{s}'", .{ pid, self.table.names[idx].get() });
             }
+            // Same profile: refresh pid/uid so scripts and inhibit track the live process.
+            if (pid != 0 and self.active_pid != pid) {
+                self.active_pid = pid;
+                self.active_uid = scanner.findUserForProcess(pid);
+                const act = &self.table.activation[idx];
+                if (act.idle_inhibit) {
+                    self.inhibitor.inhibit("falcond", "Game profile active", pid);
+                }
+            }
             return;
         }
 
-        if (idx == self.table.proton_index and active != self.table.proton_index) {
+        if (shouldIgnoreProtonFallback(active, idx, self.table.proton_index)) {
             log.info("ignoring proton fallback while specific profile '{s}' is active", .{
                 self.table.names[active].get(),
             });
@@ -59,13 +73,14 @@ pub fn activateProfile(self: anytype, idx: u8, pid: u32) void {
 
     const act = &self.table.activation[idx];
     const name = self.table.names[idx].get();
-    log.info("activating profile '{s}' (scx={s}, mode={s}, perf={}, vcache={s}, inhibit={})", .{
+    log.info("activating profile '{s}' (scx={s}, mode={s}, perf={}, vcache={s}, inhibit={}, split_lock={})", .{
         name,
         @tagName(act.scx_sched),
         @tagName(act.scx_sched_props),
         act.performance_mode,
         @tagName(act.vcache_mode),
         act.idle_inhibit,
+        act.disable_split_lock,
     });
 
     if (self.power_profiles) |*pp| {
@@ -108,11 +123,28 @@ pub fn activateProfile(self: anytype, idx: u8, pid: u32) void {
         };
     }
 
+    // Only disable when we captured a restore value; never write(0) without one.
+    if (act.disable_split_lock) {
+        if (splitlock.read()) |current| {
+            self.restore_split_lock = current;
+            if (current != 0) {
+                splitlock.write(0) catch |err| {
+                    log.warn("failed to disable split_lock_mitigate: {}", .{err});
+                    self.restore_split_lock = null;
+                };
+            }
+        } else {
+            log.warn("split_lock_mitigate unavailable, skipping disable", .{});
+        }
+    }
+
     if (act.idle_inhibit) {
         self.inhibitor.inhibit("falcond", "Game profile active", pid);
     }
 
     if (act.dmem_protect) {
+        // Required for enabling +dmem on a populated parent: sibling PIDs in the
+        // same cgroup move into falcond-dmem-other so the protected child can own dmem.low.
         if (self.dmem) |*dmem| {
             dmem.activateProfile(idx);
             var it = self.known_pids.iterator();
@@ -173,6 +205,13 @@ pub fn deactivateProfile(self: anytype, idx: u8) void {
         self.restore_vcache = null;
     }
 
+    if (self.restore_split_lock) |val| {
+        splitlock.write(val) catch |err| {
+            log.warn("failed to restore split_lock_mitigate: {}", .{err});
+        };
+        self.restore_split_lock = null;
+    }
+
     if (self.inhibitor.isInhibited()) {
         self.inhibitor.uninhibit();
     }
@@ -192,12 +231,13 @@ pub fn deactivateProfile(self: anytype, idx: u8) void {
 }
 
 fn runScript(self: anytype, script: []const u8) void {
+    // Scripts are trusted profile config (system/user profiles). They run via
+    // /bin/sh -c as the matched game UID when falcond is root.
     if (posix.system.geteuid() == 0) {
-        if (!canRunScriptFromRoot(self.active_uid)) {
+        const uid = self.active_uid orelse {
             log.warn("no saved uid, skipping profile script", .{});
             return;
-        }
-        const uid = self.active_uid.?;
+        };
 
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
@@ -205,10 +245,17 @@ fn runScript(self: anytype, script: []const u8) void {
 
         const uid_str = std.fmt.allocPrint(alloc, "#{d}", .{uid}) catch return;
         const dbus_env = std.fmt.allocPrint(alloc, "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{d}/bus", .{uid}) catch return;
+        const display = blk: {
+            if (self.active_pid) |pid| {
+                if (scanner.findDisplayForProcess(pid)) |d| break :blk d;
+            }
+            break :blk ":0";
+        };
+        const display_env = std.fmt.allocPrint(alloc, "DISPLAY={s}", .{display}) catch return;
 
         const argv = [_][]const u8{
             "sudo",    "-u",     uid_str,
-            "env",     dbus_env, "DISPLAY=:0",
+            "env",     dbus_env, display_env,
             "/bin/sh", "-c",     script,
         };
 
